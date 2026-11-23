@@ -1,0 +1,37 @@
+name: Check for Olvid Updates
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Olvid RSS for new Linux release
+        id: check
+        run: python3 scripts/check_update.py --github-output
+
+      - name: Create Pull Request for new version
+        if: steps.check.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "Update Olvid to ${{ steps.check.outputs.new_version }}"
+          branch: update/olvid-${{ steps.check.outputs.new_version }}
+          delete-branch: true
+          title: "Update Olvid to ${{ steps.check.outputs.new_version }}"
+          body: |
+            Automated update of Olvid Desktop from `${{ steps.check.outputs.old_version }}` to `${{ steps.check.outputs.new_version }}`.
+
+            - Updated tarball URL and SHA256 in `io.olvid.Olvid.yml`
+            - Added release entry in `io.olvid.Olvid.metainfo.xml`
+
+            Merging this PR will build and publish the new Flatpak to GitHub Pages and GitHub Releases.

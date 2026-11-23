@@ -1,0 +1,252 @@
+name: Build and Publish Olvid Flatpak
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      bundle_name: ${{ steps.meta.outputs.bundle_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Flatpak build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            flatpak flatpak-builder ostree gnupg appstream desktop-file-utils
+
+      - name: Setup Flathub runtime and SDK
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub \
+            org.freedesktop.Platform//25.08 \
+            org.freedesktop.Sdk//25.08
+
+      - name: Extract metadata and validate files
+        id: meta
+        run: |
+          VERSION=$(grep -oE 'olvid-[0-9A-Za-z._-]+\.tar\.gz' io.olvid.Olvid.yml | head -n1 | sed -E 's/^olvid-(.*)\.tar\.gz$/\1/')
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          PAGES_URL="https://${OWNER_LOWER}.github.io/${REPO_NAME}"
+          BUNDLE_NAME="io.olvid.Olvid-${VERSION}-x86_64.flatpak"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pages_url=${PAGES_URL}" >> "$GITHUB_OUTPUT"
+          echo "bundle_name=${BUNDLE_NAME}" >> "$GITHUB_OUTPUT"
+
+          desktop-file-validate io.olvid.Olvid.desktop
+          appstreamcli validate --no-net --explain io.olvid.Olvid.metainfo.xml
+
+      - name: Configure GPG signing (if secret provided)
+        id: gpg
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ]; then
+            GNUPGHOME=$(mktemp -d)
+            chmod 700 "$GNUPGHOME"
+            export GNUPGHOME
+
+            printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+            GPG_KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
+            if [ -z "$GPG_KEY_ID" ]; then
+              echo "::error::Failed to detect imported GPG secret key ID"
+              exit 1
+            fi
+
+            if [ -n "$GPG_PASSPHRASE" ]; then
+              mkdir -p "$GNUPGHOME"
+              echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
+              gpgconf --kill gpg-agent || true
+            fi
+
+            gpg --export "$GPG_KEY_ID" > public.gpg
+            GPG_KEY_B64=$(base64 -w0 public.gpg)
+
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "homedir=${GNUPGHOME}" >> "$GITHUB_OUTPUT"
+            echo "key_id=${GPG_KEY_ID}" >> "$GITHUB_OUTPUT"
+            echo "key_b64=${GPG_KEY_B64}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::GPG_PRIVATE_KEY secret is not set; building an unsigned repository."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Flatpak OSTree repository
+        run: |
+          GPG_ARGS=()
+          if [ "${{ steps.gpg.outputs.enabled }}" = "true" ]; then
+            GPG_ARGS+=(--gpg-sign="${{ steps.gpg.outputs.key_id }}" --gpg-homedir="${{ steps.gpg.outputs.homedir }}")
+          fi
+
+          flatpak-builder --user --force-clean \
+            --repo=repo \
+            --default-branch=stable \
+            "${GPG_ARGS[@]}" \
+            build-dir io.olvid.Olvid.yml
+
+          flatpak build-update-repo \
+            --title="Olvid Flatpak" \
+            --comment="Unofficial Flatpak repository for Olvid" \
+            --homepage="https://github.com/${{ github.repository }}" \
+            --generate-static-deltas \
+            "${GPG_ARGS[@]}" \
+            repo
+
+      - name: Stage GitHub Pages site (.flatpakrepo, .flatpakref, repo/)
+        run: |
+          PAGES_URL="${{ steps.meta.outputs.pages_url }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          mkdir -p public
+          cp -a repo public/repo
+
+          {
+            echo "[Flatpak Repo]"
+            echo "Title=Olvid Flatpak"
+            echo "Url=${PAGES_URL}/repo"
+            echo "Homepage=https://github.com/${{ github.repository }}"
+            echo "Comment=Unofficial Flatpak repository for Olvid"
+            if [ "${{ steps.gpg.outputs.enabled }}" = "true" ]; then
+              echo "GPGKey=${{ steps.gpg.outputs.key_b64 }}"
+            fi
+          } > public/olvid.flatpakrepo
+
+          {
+            echo "[Flatpak Ref]"
+            echo "Title=Olvid"
+            echo "Name=io.olvid.Olvid"
+            echo "Branch=stable"
+            echo "Url=${PAGES_URL}/repo"
+            echo "SuggestRemoteName=olvid-flatpak"
+            echo "RuntimeRepo=https://flathub.org/repo/flathub.flatpakrepo"
+            echo "IsRuntime=false"
+            if [ "${{ steps.gpg.outputs.enabled }}" = "true" ]; then
+              echo "GPGKey=${{ steps.gpg.outputs.key_b64 }}"
+            fi
+          } > public/io.olvid.Olvid.flatpakref
+
+          cat <<EOF > public/index.html
+          <!doctype html>
+          <html lang="fr">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Olvid Flatpak</title>
+            <style>
+              body { font-family: system-ui, sans-serif; max-width: 720px; margin: 3rem auto; padding: 0 1rem; line-height: 1.6; }
+              code, pre { background: #f4f4f6; padding: 0.2rem 0.4rem; border-radius: 4px; }
+              pre { padding: 1rem; overflow-x: auto; }
+              a.btn { display: inline-block; padding: 0.65rem 1.1rem; background: #0b57d0; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600; }
+            </style>
+          </head>
+          <body>
+            <h1>Olvid Flatpak (v${VERSION})</h1>
+            <p>Dépôt Flatpak non officiel pour <strong>Olvid Desktop</strong> avec mises à jour automatiques via <code>flatpak update</code>.</p>
+            <p><a class="btn" href="./io.olvid.Olvid.flatpakref">Installer Olvid (.flatpakref)</a></p>
+            <h2>Installation en ligne de commande</h2>
+            <pre>flatpak install --user ${PAGES_URL}/io.olvid.Olvid.flatpakref</pre>
+            <p>Ou ajoutez le dépôt complet :</p>
+            <pre>flatpak remote-add --user --if-not-exists olvid-flatpak ${PAGES_URL}/olvid.flatpakrepo
+          flatpak install --user olvid-flatpak io.olvid.Olvid</pre>
+            <p>Les paquets <code>.flatpak</code> autonomes sont également disponibles dans les <a href="https://github.com/${{ github.repository }}/releases">GitHub Releases</a>.</p>
+          </body>
+          </html>
+          EOF
+
+      - name: Build standalone .flatpak bundle
+        run: |
+          PAGES_URL="${{ steps.meta.outputs.pages_url }}"
+          BUNDLE_NAME="${{ steps.meta.outputs.bundle_name }}"
+          GPG_BUNDLE_ARGS=()
+          if [ "${{ steps.gpg.outputs.enabled }}" = "true" ]; then
+            GPG_BUNDLE_ARGS+=(--gpg-keys=public.gpg)
+          fi
+
+          flatpak build-bundle \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            --repo-url="${PAGES_URL}/repo" \
+            "${GPG_BUNDLE_ARGS[@]}" \
+            repo "${BUNDLE_NAME}" io.olvid.Olvid stable
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: |
+            ${{ steps.meta.outputs.bundle_name }}
+            public/io.olvid.Olvid.flatpakref
+          if-no-files-found: error
+
+  deploy-pages:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    if: github.event_name != 'pull_request'
+    needs: [build, deploy-pages]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: Olvid v${{ needs.build.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ### Installation recommandée (avec mises à jour automatiques via `flatpak update`)
+            Téléchargez `io.olvid.Olvid.flatpakref` et installez avec :
+            ```bash
+            flatpak install --user io.olvid.Olvid.flatpakref
+            ```
+            *(ou ouvrez-le directement avec GNOME Software / KDE Discover).*
+
+            ### Installation hors-ligne / bundle autonome
+            Téléchargez `${{ needs.build.outputs.bundle_name }}` et installez avec :
+            ```bash
+            flatpak install --user ${{ needs.build.outputs.bundle_name }}
+            ```
+          files: |
+            dist/${{ needs.build.outputs.bundle_name }}
+            dist/io.olvid.Olvid.flatpakref
