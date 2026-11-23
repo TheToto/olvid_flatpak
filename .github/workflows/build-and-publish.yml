@@ -28,7 +28,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            flatpak flatpak-builder ostree gnupg appstream desktop-file-utils
+            flatpak flatpak-builder ostree gnupg appstream desktop-file-utils elfutils
 
       - name: Setup Flathub runtime and SDK
         run: |
