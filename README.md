@@ -5,6 +5,8 @@ Empaquetage Flatpak d'**Olvid Desktop** à partir de l'archive Linux officielle,
 ## Installation
 
 ### Recommandé (avec mises à jour automatiques)
+1. [Télécharger `io.olvid.Olvid.flatpakref`](https://thetoto.github.io/olvid_flatpak/io.olvid.Olvid.flatpakref) et l'ouvrir avec votre boutique d'applications (GNOME Software, KDE Discover…).
+2. Ou en ligne de commande :
 ```bash
 flatpak install --user https://thetoto.github.io/olvid_flatpak/io.olvid.Olvid.flatpakref
 ```

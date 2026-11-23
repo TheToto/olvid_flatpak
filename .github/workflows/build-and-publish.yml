@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      pages_url: ${{ steps.meta.outputs.pages_url }}
       bundle_name: ${{ steps.meta.outputs.bundle_name }}
     steps:
       - name: Checkout repository
@@ -195,9 +196,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-files
-          path: |
-            ${{ steps.meta.outputs.bundle_name }}
-            public/io.olvid.Olvid.flatpakref
+          path: ${{ steps.meta.outputs.bundle_name }}
           if-no-files-found: error
 
   deploy-pages:
@@ -236,17 +235,17 @@ jobs:
           generate_release_notes: true
           body: |
             ### Installation recommandée (avec mises à jour automatiques via `flatpak update`)
-            Téléchargez `io.olvid.Olvid.flatpakref` et installez avec :
+            [Télécharger `io.olvid.Olvid.flatpakref`](${{ needs.build.outputs.pages_url }}/io.olvid.Olvid.flatpakref) et l'ouvrir avec votre boutique d'applications (GNOME Software / KDE Discover).
+
+            Ou en ligne de commande :
             ```bash
-            flatpak install --user io.olvid.Olvid.flatpakref
+            flatpak install --user ${{ needs.build.outputs.pages_url }}/io.olvid.Olvid.flatpakref
             ```
-            *(ou ouvrez-le directement avec GNOME Software / KDE Discover).*
 
             ### Installation hors-ligne / bundle autonome
-            Téléchargez `${{ needs.build.outputs.bundle_name }}` et installez avec :
+            Téléchargez `${{ needs.build.outputs.bundle_name }}` ci-dessous et installez avec :
             ```bash
             flatpak install --user ${{ needs.build.outputs.bundle_name }}
             ```
           files: |
             dist/${{ needs.build.outputs.bundle_name }}
-            dist/io.olvid.Olvid.flatpakref
