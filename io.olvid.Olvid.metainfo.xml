@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.olvid.Olvid</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <name>Olvid</name>
+  <summary>Private and secure instant messenger</summary>
+  <developer id="io.olvid">
+    <name>Olvid</name>
+  </developer>
+  <description>
+    <p>
+      Olvid is an instant messaging application designed for strong security and privacy,
+      requiring no phone number or email address and providing end-to-end encryption without
+      centralized user directories.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.olvid.Olvid.desktop</launchable>
+  <url type="homepage">https://olvid.io</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="3.3.1" date="2026-11-10" />
+  </releases>
+</component>

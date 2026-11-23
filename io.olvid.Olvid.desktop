@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Olvid
+GenericName=Secure Messenger
+Comment=Private and secure instant messenger
+Exec=olvid %u
+Icon=io.olvid.Olvid
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+StartupNotify=false
+StartupWMClass=io.olvid.windows.messenger.start_up.Launcher
+MimeType=x-scheme-handler/olvid;x-scheme-handler/olvid.openid;

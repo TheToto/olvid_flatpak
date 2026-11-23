@@ -1,0 +1,60 @@
+id: io.olvid.Olvid
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: olvid
+
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=x11
+  - --socket=pulseaudio
+  - --device=all
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --filesystem=xdg-download
+  - --env=GDK_BACKEND=x11
+  - --env=GTK_USE_PORTAL=1
+
+modules:
+  - name: olvid
+    buildsystem: simple
+    build-commands:
+      - cp -a olvid-app /app/olvid
+      - install -d /app/bin
+      - |
+        cat <<'EOF' > /app/bin/olvid
+        #!/bin/sh
+        exec /app/olvid/bin/olvid "$@"
+        EOF
+      - chmod 755 /app/bin/olvid
+      - install -Dm644 io.olvid.Olvid.desktop /app/share/applications/io.olvid.Olvid.desktop
+      - install -Dm644 io.olvid.Olvid.metainfo.xml /app/share/metainfo/io.olvid.Olvid.metainfo.xml
+      - install -Dm644 olvid-app/lib/olvid.png /app/share/icons/hicolor/32x32/apps/io.olvid.Olvid.png
+      - |
+        python3 - <<'EOF'
+        import glob, os, zipfile
+        jars = glob.glob("/app/olvid/lib/app/obv_windows_client-*.jar")
+        dst = "/app/share/icons/hicolor/256x256/apps/io.olvid.Olvid.png"
+        if jars:
+            try:
+                with zipfile.ZipFile(jars[0]) as z:
+                    if "fx/icons/olvid/ic-launcher.png" in z.namelist():
+                        os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        with z.open("fx/icons/olvid/ic-launcher.png") as src, open(dst, "wb") as out:
+                            out.write(src.read())
+            except Exception as exc:
+                print(f"Warning: could not extract high-res icon: {exc}")
+        EOF
+    sources:
+      - type: archive
+        only-arches:
+          - x86_64
+        url: https://static.olvid.io/linux/olvid-3.3.1.tar.gz
+        sha256: 3f73bba8ce7c92eda187ed647b15718f5342009068648cf35eb48ce58f70d008
+        dest: olvid-app
+        strip-components: 1
+      - type: file
+        path: io.olvid.Olvid.desktop
+      - type: file
+        path: io.olvid.Olvid.metainfo.xml
