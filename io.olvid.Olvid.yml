@@ -50,8 +50,8 @@ modules:
       - type: archive
         only-arches:
           - x86_64
-        url: https://static.olvid.io/linux/olvid-3.3.1.tar.gz
-        sha256: 3f73bba8ce7c92eda187ed647b15718f5342009068648cf35eb48ce58f70d008
+        url: https://static.olvid.io/linux/olvid-3.3.2.tar.gz
+        sha256: 59e7219fe4063fd2d0b6ff7d369d7960587d39a6011b64ca916cf45e6b816044
         dest: olvid-app
         strip-components: 1
       - type: file
