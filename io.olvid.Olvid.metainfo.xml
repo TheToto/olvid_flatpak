@@ -19,6 +19,7 @@
   <url type="homepage">https://olvid.io</url>
   <content_rating type="oars-1.1" />
   <releases>
+    <release version="3.3.2" date="2026-11-24" />
     <release version="3.3.1" date="2026-11-10" />
   </releases>
 </component>
